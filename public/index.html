@@ -801,7 +801,7 @@
           </div>
           <div class="toolbar-group">
             <span class="toolbar-label">质量</span>
-            <select class="toolbar-select" id="qualitySelect">
+            <select class="toolbar-select" id="qualitySelect" title="图片质量">
               <option value="low">低</option>
               <option value="medium">中</option>
               <option value="high" selected>高</option>
@@ -809,7 +809,7 @@
           </div>
           <div class="toolbar-group">
             <span class="toolbar-label">尺寸</span>
-            <select class="toolbar-select" id="sizeSelect">
+            <select class="toolbar-select" id="sizeSelect" title="图片尺寸">
               <option value="auto" selected>自动</option>
               <option value="1024x1024">1:1</option>
               <option value="1024x1536">2:3</option>
@@ -842,7 +842,6 @@
   <script>
     let currentChatId = null;
     let currentMode = 'generate';
-    let uploadedFileId = null;
     let uploadedImageUrl = null;
     let isGenerating = false;
     let lastGenerateParams = null;
@@ -1025,7 +1024,6 @@
 
         // 直接用 base64 data URL，不需要上传到 Files API
         uploadedImageUrl = e.target.result;
-        uploadedFileId = 'local';
         showToast('图片已加载', 'success');
       };
       reader.readAsDataURL(file);
@@ -1033,7 +1031,6 @@
 
     function removeUpload(e) {
       e.stopPropagation();
-      uploadedFileId = null;
       uploadedImageUrl = null;
       document.getElementById('uploadPreviewWrap').classList.remove('visible');
       document.getElementById('imageUpload').value = '';
@@ -1062,7 +1059,6 @@
 
       // Clear uploaded reference image after submit
       if (currentMode === 'edit' && uploadedImageUrl) {
-        uploadedFileId = null;
         uploadedImageUrl = null;
         document.getElementById('uploadPreviewWrap').classList.remove('visible');
         document.getElementById('imageUpload').value = '';

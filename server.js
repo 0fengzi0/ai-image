@@ -1,7 +1,7 @@
 import express from 'express';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
-import { createReadStream, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
@@ -22,7 +22,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(join(__dirname, 'public')));
 
 // 确保目录存在
-const dirs = ['public/images', 'public/temp', 'logs'];
+const dirs = ['public/images', 'logs'];
 for (const dir of dirs) {
   const fullPath = join(__dirname, dir);
   if (!existsSync(fullPath)) {
@@ -44,6 +44,29 @@ function saveImage(base64Data, filename) {
   const buffer = Buffer.from(base64Data, 'base64');
   writeFileSync(fullPath, buffer);
   return filename;
+}
+
+function extractImageCall(output = []) {
+  return output.find(item => item?.type === 'image_generation_call' && item?.result)
+    || output.flatMap(item => item?.content || []).find(item => item?.type === 'image_generation_call' && item?.result)
+    || null;
+}
+
+function summarizeResponse(response) {
+  const output = response?.output || [];
+  const outputTypes = output.map(item => item?.type).filter(Boolean);
+  const text = output
+    .flatMap(item => item?.content || [])
+    .map(item => item?.text || item?.content || '')
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 500);
+
+  return {
+    status: response?.status,
+    outputTypes,
+    text,
+  };
 }
 
 // 首页路由
@@ -120,13 +143,13 @@ app.post('/api/generate', async (req, res) => {
   try {
     // 构建 input：多轮对话时用 base64 传入上一轮图片
     let input;
-    if (conversation.lastImageBase64 && !fileId) {
+    if (conversation.lastImageBase64 && !imageUrl) {
       // 多轮编辑：带上之前生成的图片(base64 内联)
       input = [
         {
           role: 'user',
           content: [
-            { type: 'input_text', text: prompt },
+            { type: 'input_text', text: `请根据以下要求生成一张图片，不要只返回文字说明：${prompt}` },
             {
               type: 'input_image',
               image_url: `data:image/png;base64,${conversation.lastImageBase64}`
@@ -140,14 +163,14 @@ app.post('/api/generate', async (req, res) => {
         {
           role: 'user',
           content: [
-            { type: 'input_text', text: prompt },
+            { type: 'input_text', text: `请基于参考图片进行编辑并输出新图片，不要只返回文字说明：${prompt}` },
             { type: 'input_image', image_url: imageUrl }
           ]
         }
       ];
     } else {
       // 首次生成
-      input = prompt;
+      input = `请根据以下要求生成一张图片，不要只返回文字说明：${prompt}`;
     }
 
     const requestParams = {
@@ -157,7 +180,8 @@ app.post('/api/generate', async (req, res) => {
         type: 'image_generation',
         action,
         quality,
-        size
+        size,
+        partial_images: 2,
       }],
       stream: true
     };
@@ -168,6 +192,7 @@ app.post('/api/generate', async (req, res) => {
     let responseId = null;
 
     let useStream = true;
+    let lastResponseSummary = null;
 
     try {
       const stream = await openai.responses.create(requestParams);
@@ -184,16 +209,18 @@ app.post('/api/generate', async (req, res) => {
           } else if (event.type === 'response.output_item.done') {
             const item = event.item;
             console.log(`[output_item.done] item.type=${item?.type}`);
-            if (item && item.type === 'image_generation_call') {
-              imageBase64 = item.result;
-              revisedPrompt = item.revised_prompt;
-              imageCallId = item.id;
+            const imageCall = extractImageCall([item]);
+            if (imageCall) {
+              imageBase64 = imageCall.result;
+              revisedPrompt = imageCall.revised_prompt;
+              imageCallId = imageCall.id;
             }
           } else if (event.type === 'response.completed') {
             responseId = event.response?.id;
-            console.log(`[response.completed] id=${responseId}`);
+            lastResponseSummary = summarizeResponse(event.response);
+            console.log(`[response.completed] id=${responseId}`, lastResponseSummary);
             if (!imageBase64) {
-              const imageCall = event.response?.output?.find(o => o.type === 'image_generation_call');
+              const imageCall = extractImageCall(event.response?.output);
               if (imageCall) {
                 imageBase64 = imageCall.result;
                 revisedPrompt = imageCall.revised_prompt;
@@ -210,16 +237,19 @@ app.post('/api/generate', async (req, res) => {
     // 非流式 fallback
     if (!useStream || !imageBase64) {
       try {
-        const nonStreamParams = { ...requestParams, stream: false };
-        response = await openai.responses.create(nonStreamParams);
-        console.log(`[Non-stream response] status=${response.status}, output:`, response.output?.map(o => o.type));
+        const nonStreamTool = { ...requestParams.tools[0] };
+        delete nonStreamTool.partial_images;
+        const nonStreamParams = { ...requestParams, tools: [nonStreamTool], stream: false };
+        const nonStreamResponse = await openai.responses.create(nonStreamParams);
+        lastResponseSummary = summarizeResponse(nonStreamResponse);
+        console.log(`[Non-stream response]`, lastResponseSummary);
 
-        const imageCall = response.output?.find(o => o.type === 'image_generation_call');
+        const imageCall = extractImageCall(nonStreamResponse.output);
         if (imageCall) {
           imageBase64 = imageCall.result;
           revisedPrompt = imageCall.revised_prompt;
           imageCallId = imageCall.id;
-          responseId = response.id;
+          responseId = nonStreamResponse.id;
         }
       } catch (nonStreamErr) {
         console.error('[Non-stream also failed]', nonStreamErr);
@@ -235,14 +265,14 @@ app.post('/api/generate', async (req, res) => {
       const filename = `public/images/${conversationId}_${timestamp}.png`;
       saveImage(imageBase64, filename);
 
-      const imageUrl = `/images/${conversationId}_${timestamp}.png`;
+      const savedImageUrl = `/images/${conversationId}_${timestamp}.png`;
 
       // 更新对话历史
       const userMessage = { role: 'user', content: prompt };
       const assistantMessage = {
         role: 'assistant',
         content: revisedPrompt || prompt,
-        imageUrl,
+        imageUrl: savedImageUrl,
         imageId: imageCallId
       };
 
@@ -259,11 +289,14 @@ app.post('/api/generate', async (req, res) => {
       res.write(`data: ${JSON.stringify({
         type: 'completed',
         revisedPrompt,
-        imageUrl,
+        imageUrl: savedImageUrl,
         imageId: imageCallId
       })}\n\n`);
     } else {
-      res.write(`data: ${JSON.stringify({ type: 'error', error: '未能生成图片' })}\n\n`);
+      const detail = lastResponseSummary
+        ? `未能生成图片。API 返回状态: ${lastResponseSummary.status || 'unknown'}，输出类型: ${lastResponseSummary.outputTypes.join(', ') || 'none'}${lastResponseSummary.text ? `，文本响应: ${lastResponseSummary.text}` : ''}`
+        : '未能生成图片：API 未返回 image_generation_call.result';
+      res.write(`data: ${JSON.stringify({ type: 'error', error: detail })}\n\n`);
     }
 
     res.end();
@@ -272,37 +305,6 @@ app.post('/api/generate', async (req, res) => {
     const errorMsg = error.error?.message || error.message || 'Unknown error';
     res.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
     res.end();
-  }
-});
-
-// 上传图片用于编辑
-app.post('/api/upload', async (req, res) => {
-  const { imageData, conversationId } = req.body;
-
-  if (!imageData) {
-    return res.status(400).json({ error: 'Image data is required' });
-  }
-
-  try {
-    const buffer = Buffer.from(imageData.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-    const tempFilename = `public/temp/${conversationId || 'upload'}_${Date.now()}.png`;
-    const tempPath = join(__dirname, tempFilename);
-
-    writeFileSync(tempPath, buffer);
-
-    // 上传到 OpenAI Files API
-    const file = await openai.files.create({
-      file: createReadStream(tempPath),
-      purpose: 'vision',
-    });
-
-    // 清理临时文件
-    try { unlinkSync(tempPath); } catch {}
-
-    res.json({ fileId: file.id });
-  } catch (error) {
-    console.error('Error uploading image:', error);
-    res.status(500).json({ error: error.message });
   }
 });
 
