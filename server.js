@@ -71,20 +71,36 @@ function saveImage(base64Data, filename) {
   return filename;
 }
 
+function normalizeImageSize(size) {
+  if (!size || size === 'auto') return 'auto';
+  if (/^\d+x\d+$/.test(size)) return size;
+
+  const ratioMap = {
+    '1:1': '1024x1024',
+    '2:3': '1024x1536',
+    '3:2': '1536x1024',
+  };
+  return ratioMap[size] || '1024x1024';
+}
+
 function extractImageCall(output = []) {
   return output.find(item => item?.type === 'image_generation_call' && item?.result)
     || output.flatMap(item => item?.content || []).find(item => item?.type === 'image_generation_call' && item?.result)
     || null;
 }
 
+function redactInlineImages(text = '') {
+  return text.replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, '[已隐藏内联图片数据]');
+}
+
 function summarizeResponse(response) {
   const output = response?.output || [];
   const outputTypes = output.map(item => item?.type).filter(Boolean);
-  const text = output
+  const text = redactInlineImages(output
     .flatMap(item => item?.content || [])
     .map(item => item?.text || item?.content || '')
     .filter(Boolean)
-    .join('\n')
+    .join('\n'))
     .slice(0, 500);
 
   return {
@@ -140,6 +156,7 @@ app.post('/api/generate', async (req, res) => {
     quality = 'medium',
     size = '1024x1024',
     imageUrl,
+    imageUrls = [],
   } = req.body;
 
   if (!prompt) {
@@ -171,15 +188,19 @@ app.post('/api/generate', async (req, res) => {
   res.flushHeaders();
 
   try {
+    const referenceImageUrls = Array.isArray(imageUrls) && imageUrls.length > 0
+      ? imageUrls
+      : (imageUrl ? [imageUrl] : []);
+
     // 构建 input：多轮对话时用 base64 传入上一轮图片
     let input;
-    if (conversation.lastImageBase64 && !imageUrl) {
+    if (conversation.lastImageBase64 && referenceImageUrls.length === 0) {
       // 多轮编辑：带上之前生成的图片(base64 内联)
       input = [
         {
           role: 'user',
           content: [
-            { type: 'input_text', text: `请根据以下要求生成一张图片，不要只返回文字说明：${prompt}` },
+            { type: 'input_text', text: `请直接基于参考图生成一张新图片。最终输出必须是图片，不要返回文字说明、操作建议、代码块或提示词文本。生成要求：${prompt}` },
             {
               type: 'input_image',
               image_url: `data:image/png;base64,${conversation.lastImageBase64}`
@@ -187,20 +208,20 @@ app.post('/api/generate', async (req, res) => {
           ]
         }
       ];
-    } else if (imageUrl) {
-      // 上传图片编辑（base64 data URL 内联）
+    } else if (referenceImageUrls.length > 0) {
+      // 上传/选择参考图片编辑（base64 data URL 内联，可多图）
       input = [
         {
           role: 'user',
           content: [
-            { type: 'input_text', text: `请基于参考图片进行编辑并输出新图片，不要只返回文字说明：${prompt}` },
-            { type: 'input_image', image_url: imageUrl }
+            { type: 'input_text', text: `请直接基于${referenceImageUrls.length}张参考图片编辑并生成一张新图片。最终输出必须是图片，不要返回文字说明、操作建议、代码块或提示词文本。编辑要求：${prompt}` },
+            ...referenceImageUrls.map(url => ({ type: 'input_image', image_url: url }))
           ]
         }
       ];
     } else {
       // 首次生成
-      input = `请根据以下要求生成一张图片，不要只返回文字说明：${prompt}`;
+      input = `请直接生成一张新图片。最终输出必须是图片，不要返回文字说明、操作建议、代码块或提示词文本。生成要求：${prompt}`;
     }
 
     const requestParams = {
@@ -210,9 +231,10 @@ app.post('/api/generate', async (req, res) => {
         type: 'image_generation',
         action,
         quality,
-        size,
+        size: normalizeImageSize(size),
         partial_images: 2,
       }],
+      tool_choice: 'required',
       stream: true
     };
 
@@ -298,12 +320,19 @@ app.post('/api/generate', async (req, res) => {
       const savedImageUrl = `/images/${conversationId}_${timestamp}.png`;
 
       // 更新对话历史
-      const userMessage = { role: 'user', content: prompt };
+      const userMessage = {
+        role: 'user',
+        content: prompt,
+        imageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : undefined,
+        imageUrl: referenceImageUrls[0]
+      };
+      const durationMs = Date.now() - startedAt;
       const assistantMessage = {
         role: 'assistant',
         content: revisedPrompt || prompt,
         imageUrl: savedImageUrl,
-        imageId: imageCallId
+        imageId: imageCallId,
+        durationMs
       };
 
       conversation.messages.push(userMessage, assistantMessage);
@@ -323,7 +352,7 @@ app.post('/api/generate', async (req, res) => {
         revisedPrompt,
         imageUrl: savedImageUrl,
         imageId: imageCallId,
-        durationMs: Date.now() - startedAt
+        durationMs
       })}\n\n`);
     } else {
       const detail = lastResponseSummary

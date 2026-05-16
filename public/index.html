@@ -465,6 +465,22 @@
     .toolbar-select:focus { border-color: var(--border-focus); }
     .toolbar-select option { background: var(--bg-card); color: var(--text-primary); }
 
+    .toolbar-input {
+      display: none;
+      width: 72px;
+      padding: 6px 8px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-size: 0.8rem;
+      outline: none;
+    }
+
+    .toolbar-input.visible { display: inline-block; }
+    .custom-resolution-separator { display: none; padding: 0 2px; }
+    .custom-resolution-separator.visible { display: inline-block; }
+
     .mode-toggle {
       display: flex;
       background: var(--bg-input);
@@ -501,71 +517,123 @@
 
     .upload-section.visible { display: block; }
 
-    .upload-dropzone {
-      padding: 20px;
-      border: 2px dashed var(--border);
+    .reference-panel {
+      padding: 14px;
+      border: 1px solid var(--border);
       border-radius: var(--radius-md);
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.3s;
-      position: relative;
+      background: rgba(18, 18, 42, 0.72);
     }
 
-    .upload-dropzone:hover,
-    .upload-dropzone.dragover {
-      border-color: var(--accent);
-      background: rgba(108,92,231,0.05);
+    .reference-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
     }
 
-    .upload-dropzone input { display: none; }
-
-    .upload-hint {
-      color: var(--text-muted);
+    .reference-title {
       font-size: 0.85rem;
-    }
-
-    .upload-hint svg { width: 32px; height: 32px; margin-bottom: 8px; color: var(--text-muted); }
-
-    .upload-preview-wrap {
-      display: none;
-      position: relative;
-      margin-top: 10px;
-    }
-
-    .upload-preview-wrap.visible { display: inline-block; }
-
-    .upload-preview-label {
-      position: absolute;
-      left: 8px;
-      top: 8px;
-      z-index: 1;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: rgba(0, 0, 0, 0.72);
-      color: #fff;
-      font-size: 0.72rem;
       font-weight: 600;
-      backdrop-filter: blur(8px);
+      color: var(--text-primary);
     }
 
-    .upload-preview-wrap.editing .upload-preview-img {
+    .reference-subtitle {
+      margin-top: 2px;
+      color: var(--text-muted);
+      font-size: 0.72rem;
+    }
+
+    .reference-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .reference-action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .reference-action-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent-light);
+      background: rgba(108, 92, 231, 0.08);
+    }
+
+    .reference-grid {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .reference-empty {
+      width: 100%;
+      padding: 18px;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      text-align: center;
+    }
+
+    .reference-thumb {
+      position: relative;
+      width: 104px;
+      height: 104px;
+      flex: 0 0 104px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+    }
+
+    .reference-thumb.editing {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.18);
     }
 
-    .upload-preview-img {
-      max-height: 120px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
+    .reference-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
     }
 
-    .upload-remove {
+    .reference-label {
       position: absolute;
-      top: -6px;
-      right: -6px;
+      left: 6px;
+      bottom: 6px;
+      max-width: calc(100% - 12px);
+      padding: 3px 6px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.72);
+      color: #fff;
+      font-size: 0.68rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .reference-remove {
+      position: absolute;
+      top: 5px;
+      right: 5px;
       width: 22px;
       height: 22px;
-      background: var(--error);
+      background: rgba(255, 107, 107, 0.95);
       border: none;
       border-radius: 50%;
       color: white;
@@ -575,6 +643,90 @@
       align-items: center;
       justify-content: center;
     }
+
+    .history-picker {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1500;
+      background: rgba(0, 0, 0, 0.62);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .history-picker.open { display: flex; }
+
+    .history-picker-panel {
+      width: min(760px, 96vw);
+      max-height: 78vh;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .history-picker-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .history-picker-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .history-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 12px;
+      padding: 16px;
+      max-height: calc(78vh - 62px);
+      overflow-y: auto;
+    }
+
+    .history-image-option {
+      position: relative;
+      aspect-ratio: 1;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: var(--bg-input);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .history-image-option:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .history-image-option img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .history-picker-empty {
+      grid-column: 1 / -1;
+      padding: 40px;
+      color: var(--text-muted);
+      text-align: center;
+      font-size: 0.86rem;
+    }
+
+    .upload-dropzone {
+      display: none;
+    }
+
+    #imageUpload { display: none; }
+
+    .upload-dropzone input { display: none; }
 
     .input-row {
       display: flex;
@@ -803,20 +955,23 @@
       <div class="input-area">
         <!-- Upload Section -->
         <div class="upload-section" id="uploadSection">
-          <div class="upload-dropzone" id="uploadDropzone" onclick="document.getElementById('imageUpload').click()">
-            <div class="upload-hint">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
-              </svg>
-              <div>拖拽图片到此处 或 点击上传</div>
+          <div class="reference-panel" id="referencePanel">
+            <div class="reference-panel-head">
+              <div>
+                <div class="reference-title">参考图片 <span id="referenceCount">0</span>/6</div>
+                <div class="reference-subtitle">支持上传多张图片，或输入/点击 @ 从历史图片中选择</div>
+              </div>
+              <div class="reference-actions">
+                <button class="reference-action-btn" onclick="document.getElementById('imageUpload').click()">上传图片</button>
+                <button class="reference-action-btn" onclick="openHistoryPicker()">@ 选择图片</button>
+              </div>
             </div>
-            <input type="file" id="imageUpload" accept="image/*" onchange="handleImageUpload(event)">
-            <div class="upload-preview-wrap" id="uploadPreviewWrap">
-              <div class="upload-preview-label" id="uploadPreviewLabel">参考图片</div>
-              <img id="uploadPreview" class="upload-preview-img" alt="">
-              <button class="upload-remove" onclick="removeUpload(event)">✕</button>
+            <div class="reference-grid" id="referenceGrid">
+              <div class="reference-empty">暂无参考图，点击“上传图片”或“@ 选择图片”添加</div>
             </div>
+            <input type="file" id="imageUpload" accept="image/*" multiple onchange="handleImageUpload(event)">
           </div>
+          <div class="upload-dropzone" id="uploadDropzone"></div>
         </div>
 
         <!-- Toolbar -->
@@ -840,13 +995,25 @@
             </select>
           </div>
           <div class="toolbar-group">
-            <span class="toolbar-label">尺寸</span>
-            <select class="toolbar-select" id="sizeSelect" title="图片尺寸">
+            <span class="toolbar-label">比例</span>
+            <select class="toolbar-select" id="sizeSelect" title="图片比例">
               <option value="auto" selected>自动</option>
-              <option value="1024x1024">1:1</option>
-              <option value="1024x1536">2:3</option>
-              <option value="1536x1024">3:2</option>
+              <option value="1:1">1:1</option>
+              <option value="2:3">2:3</option>
+              <option value="3:2">3:2</option>
             </select>
+          </div>
+          <div class="toolbar-group">
+            <span class="toolbar-label">分辨率</span>
+            <select class="toolbar-select" id="resolutionSelect" title="图片分辨率" onchange="toggleCustomResolution()">
+              <option value="1k" selected>1K</option>
+              <option value="2k">2K</option>
+              <option value="4k">4K</option>
+              <option value="custom">自定义</option>
+            </select>
+            <input class="toolbar-input" id="customWidth" type="number" min="256" max="4096" step="64" placeholder="宽" title="自定义宽度">
+            <span class="toolbar-label custom-resolution-separator" id="customResolutionSeparator">×</span>
+            <input class="toolbar-input" id="customHeight" type="number" min="256" max="4096" step="64" placeholder="高" title="自定义高度">
           </div>
         </div>
 
@@ -868,15 +1035,27 @@
     <img id="lightboxImg" src="" alt="">
   </div>
 
+  <!-- History Image Picker -->
+  <div class="history-picker" id="historyPicker" onclick="closeHistoryPicker(event)">
+    <div class="history-picker-panel" onclick="event.stopPropagation()">
+      <div class="history-picker-head">
+        <div class="history-picker-title">@ 选择历史图片</div>
+        <button class="reference-action-btn" onclick="closeHistoryPicker()">关闭</button>
+      </div>
+      <div class="history-picker-grid" id="historyPickerGrid"></div>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div class="toast-container" id="toastContainer"></div>
 
   <script>
     let currentChatId = null;
     let currentMode = 'generate';
-    let uploadedImageUrl = null;
+    let referenceImages = [];
     let isGenerating = false;
     let lastGenerateParams = null;
+    const MAX_REFERENCE_IMAGES = 6;
 
     // ===== Init =====
     document.addEventListener('DOMContentLoaded', () => {
@@ -898,10 +1077,10 @@
         e.preventDefault();
         dropzone.classList.remove('dragover');
         if (e.dataTransfer.files.length) {
-          document.getElementById('imageUpload').files = e.dataTransfer.files;
-          handleImageUpload({ target: { files: e.dataTransfer.files } });
+          handleImageUpload({ target: { files: e.dataTransfer.files, value: '' } });
         }
       });
+      toggleCustomResolution();
     });
 
     function autoResize() {
@@ -961,13 +1140,16 @@
         if (conv.messages && conv.messages.length > 0) {
           area.innerHTML = conv.messages.map(msg => {
             if (msg.role === 'user') {
-              const refImg = msg.imageUrl ? `<img src="${msg.imageUrl}" style="max-width:100%;max-height:200px;border-radius:8px;margin-bottom:8px;display:block;" alt="参考图">` : '';
+              const refUrls = Array.isArray(msg.imageUrls) ? msg.imageUrls : (msg.imageUrl ? [msg.imageUrl] : []);
+              const refImg = refUrls.length > 0
+                ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${refUrls.map(url => `<img src="${url}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;" alt="参考图">`).join('')}</div>`
+                : '';
               return `<div class="message message-user"><div class="bubble">${refImg}${escapeHtml(msg.content)}</div></div>`;
             } else {
               return `<div class="message message-assistant">
                 <div class="assistant-avatar">🎨</div>
                 <div class="assistant-body">
-                  ${msg.content ? `<div class="assistant-text">${escapeHtml(msg.content)}</div>` : ''}
+                  ${renderGenerationTime(msg.durationMs)}
                   <div class="image-card">
                     <img src="${msg.imageUrl}" alt="Generated" onclick="openLightbox('${msg.imageUrl}')">
                     <div class="image-actions">
@@ -1043,34 +1225,124 @@
       document.getElementById('sendBtnText').textContent = mode === 'generate' ? '生成' : '编辑';
     }
 
-    // ===== Image Upload =====
+    // ===== Reference Images =====
     async function handleImageUpload(event) {
-      const file = event.target.files?.[0];
-      if (!file) return;
+      const files = Array.from(event.target.files || []);
+      if (!files.length) return;
 
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const preview = document.getElementById('uploadPreview');
-        preview.src = e.target.result;
-        const previewWrap = document.getElementById('uploadPreviewWrap');
-        previewWrap.classList.add('visible');
-        previewWrap.classList.remove('editing');
-        document.getElementById('uploadPreviewLabel').textContent = '上传的参考图';
+      const slots = MAX_REFERENCE_IMAGES - referenceImages.length;
+      if (slots <= 0) {
+        showToast(`最多只能添加 ${MAX_REFERENCE_IMAGES} 张参考图`, 'error');
+        event.target.value = '';
+        return;
+      }
 
-        // 直接用 base64 data URL，不需要上传到 Files API
-        uploadedImageUrl = e.target.result;
-        showToast('图片已加载', 'success');
-      };
-      reader.readAsDataURL(file);
+      const selectedFiles = files.slice(0, slots);
+      const dataUrls = await Promise.all(selectedFiles.map(file => readFileAsDataUrl(file)));
+      dataUrls.forEach((dataUrl, index) => addReferenceImage({
+        dataUrl,
+        src: dataUrl,
+        label: `上传图 ${referenceImages.length + index + 1}`,
+        source: 'upload'
+      }));
+
+      if (files.length > slots) showToast(`已添加前 ${slots} 张，最多支持 ${MAX_REFERENCE_IMAGES} 张`, 'error');
+      else showToast(`已添加 ${selectedFiles.length} 张参考图`, 'success');
+      event.target.value = '';
     }
 
-    function removeUpload(e) {
-      e.stopPropagation();
-      uploadedImageUrl = null;
-      const previewWrap = document.getElementById('uploadPreviewWrap');
-      previewWrap.classList.remove('visible', 'editing');
-      document.getElementById('uploadPreviewLabel').textContent = '参考图片';
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function addReferenceImage({ src, dataUrl, label = '参考图', source = 'upload' }) {
+      if (referenceImages.length >= MAX_REFERENCE_IMAGES) {
+        showToast(`最多只能添加 ${MAX_REFERENCE_IMAGES} 张参考图`, 'error');
+        return;
+      }
+      referenceImages.push({
+        id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        src,
+        dataUrl,
+        label,
+        source
+      });
+      renderReferenceImages();
+    }
+
+    function removeReferenceImage(id) {
+      referenceImages = referenceImages.filter(img => img.id !== id);
+      renderReferenceImages();
+    }
+
+    function clearReferenceImages() {
+      referenceImages = [];
+      renderReferenceImages();
       document.getElementById('imageUpload').value = '';
+    }
+
+    function renderReferenceImages() {
+      const grid = document.getElementById('referenceGrid');
+      const count = document.getElementById('referenceCount');
+      count.textContent = referenceImages.length;
+
+      if (referenceImages.length === 0) {
+        grid.innerHTML = '<div class="reference-empty">暂无参考图，点击“上传图片”或“@ 选择图片”添加</div>';
+        return;
+      }
+
+      grid.innerHTML = referenceImages.map(img => `
+        <div class="reference-thumb ${img.source === 'edit' ? 'editing' : ''}">
+          <img src="${img.src}" alt="${escapeHtml(img.label)}">
+          <div class="reference-label">${escapeHtml(img.label)}</div>
+          <button class="reference-remove" onclick="removeReferenceImage('${img.id}')" title="移除">✕</button>
+        </div>
+      `).join('');
+    }
+
+    function getHistoryImages() {
+      const urls = [];
+      document.querySelectorAll('.image-card img:not(.partial)').forEach(img => {
+        const src = img.getAttribute('src');
+        if (src && !src.startsWith('data:') && !urls.includes(src)) urls.push(src);
+      });
+      return urls;
+    }
+
+    function openHistoryPicker() {
+      const picker = document.getElementById('historyPicker');
+      const grid = document.getElementById('historyPickerGrid');
+      const images = getHistoryImages();
+      grid.innerHTML = images.length === 0
+        ? '<div class="history-picker-empty">当前对话暂无可选历史图片</div>'
+        : images.map(url => `
+          <div class="history-image-option" onclick="addHistoryImageAsReference('${url}')">
+            <img src="${url}" alt="历史图片">
+          </div>
+        `).join('');
+      picker.classList.add('open');
+    }
+
+    function closeHistoryPicker(event) {
+      if (event && event.target.id !== 'historyPicker') return;
+      document.getElementById('historyPicker').classList.remove('open');
+    }
+
+    async function addHistoryImageAsReference(url) {
+      try {
+        const dataUrl = await imageUrlToDataUrl(url);
+        addReferenceImage({ src: url, dataUrl, label: '历史图片', source: 'history' });
+        closeHistoryPicker();
+        switchMode('edit');
+        showToast('已添加历史图片为参考图', 'success');
+      } catch (error) {
+        showToast('载入历史图片失败', 'error');
+      }
     }
 
     // ===== Submit =====
@@ -1085,22 +1357,16 @@
       }
 
       const quality = document.getElementById('qualitySelect').value;
-      const size = document.getElementById('sizeSelect').value;
+      const size = buildImageSize();
       const action = currentMode === 'edit' ? 'edit' : 'generate';
+      const refImgs = currentMode === 'edit' ? referenceImages.map(img => img.dataUrl) : [];
 
-      // Add user message (with reference image if in edit mode)
-      const refImg = (currentMode === 'edit' && uploadedImageUrl) ? uploadedImageUrl : null;
-      appendUserMessage(prompt, refImg);
+      appendUserMessage(prompt, refImgs);
       document.getElementById('promptInput').value = '';
       document.getElementById('promptInput').style.height = 'auto';
 
-      // Clear uploaded reference image after submit
-      if (currentMode === 'edit' && uploadedImageUrl) {
-        uploadedImageUrl = null;
-        const previewWrap = document.getElementById('uploadPreviewWrap');
-        previewWrap.classList.remove('visible', 'editing');
-        document.getElementById('uploadPreviewLabel').textContent = '参考图片';
-        document.getElementById('imageUpload').value = '';
+      if (currentMode === 'edit' && refImgs.length > 0) {
+        clearReferenceImages();
       }
 
       // Show loading
@@ -1110,7 +1376,7 @@
 
       try {
         const body = { conversationId: currentChatId, prompt, quality, size, action };
-        if (currentMode === 'edit' && refImg) body.imageUrl = refImg;
+        if (currentMode === 'edit' && refImgs.length > 0) body.imageUrls = refImgs;
         lastGenerateParams = { ...body };
 
         const response = await fetch('/api/generate', {
@@ -1195,18 +1461,19 @@
     }
 
     // ===== Render Helpers =====
-    function appendUserMessage(text, refImageUrl = null) {
+    function appendUserMessage(text, refImageUrls = []) {
       const area = document.getElementById('chatArea');
       // Remove empty state
       const empty = area.querySelector('.empty-state');
       if (empty) empty.remove();
 
+      const refs = Array.isArray(refImageUrls) ? refImageUrls : (refImageUrls ? [refImageUrls] : []);
       const div = document.createElement('div');
       div.className = 'message message-user';
-      const refImageHtml = refImageUrl
-        ? `<img src="${refImageUrl}" style="max-width:100%;max-height:200px;border-radius:8px;margin-bottom:8px;display:block;" alt="参考图">`
+      const refImagesHtml = refs.length > 0
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${refs.map(url => `<img src="${url}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;" alt="参考图">`).join('')}</div>`
         : '';
-      div.innerHTML = `<div class="bubble">${refImageHtml}${escapeHtml(text)}</div>`;
+      div.innerHTML = `<div class="bubble">${refImagesHtml}${escapeHtml(text)}</div>`;
       area.appendChild(div);
       scrollBottom();
     }
@@ -1286,23 +1553,45 @@
       a.click();
     }
 
+    function buildImageSize() {
+      const ratio = document.getElementById('sizeSelect').value;
+      const resolution = document.getElementById('resolutionSelect').value;
+
+      if (ratio === 'auto') return 'auto';
+      if (resolution === 'custom') {
+        const width = Number(document.getElementById('customWidth').value);
+        const height = Number(document.getElementById('customHeight').value);
+        if (width >= 256 && height >= 256) return `${Math.round(width)}x${Math.round(height)}`;
+        showToast('请输入有效的自定义分辨率', 'error');
+        return '1024x1024';
+      }
+
+      const sizeMap = {
+        '1k': { '1:1': '1024x1024', '2:3': '1024x1536', '3:2': '1536x1024' },
+        '2k': { '1:1': '2048x2048', '2:3': '2048x3072', '3:2': '3072x2048' },
+        '4k': { '1:1': '4096x4096', '2:3': '2730x4096', '3:2': '4096x2730' }
+      };
+      return sizeMap[resolution]?.[ratio] || '1024x1024';
+    }
+
+    function toggleCustomResolution() {
+      const visible = document.getElementById('resolutionSelect').value === 'custom';
+      document.getElementById('customWidth').classList.toggle('visible', visible);
+      document.getElementById('customHeight').classList.toggle('visible', visible);
+      document.getElementById('customResolutionSeparator').classList.toggle('visible', visible);
+    }
+
     async function editImage(url) {
       switchMode('edit');
-      const preview = document.getElementById('uploadPreview');
-      const previewWrap = document.getElementById('uploadPreviewWrap');
-      preview.src = url;
-      previewWrap.classList.add('visible', 'editing');
-      document.getElementById('uploadPreviewLabel').textContent = '正在编辑这张图片';
       document.getElementById('promptInput').focus();
       document.getElementById('promptInput').placeholder = '描述你想对这张图片进行的修改...';
       document.querySelector('.input-area').scrollIntoView({ behavior: 'smooth', block: 'end' });
 
       try {
-        uploadedImageUrl = await imageUrlToDataUrl(url);
+        const dataUrl = await imageUrlToDataUrl(url);
+        addReferenceImage({ src: url, dataUrl, label: '正在编辑这张图片', source: 'edit' });
         showToast('已选中要编辑的图片，请描述修改需求', 'success');
       } catch (error) {
-        uploadedImageUrl = null;
-        previewWrap.classList.remove('visible', 'editing');
         showToast('载入编辑图片失败，请重试', 'error');
       }
     }
