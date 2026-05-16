@@ -320,6 +320,18 @@
       margin-bottom: 10px;
     }
 
+    .generation-time {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 10px;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      background: rgba(102, 126, 234, 0.12);
+      color: var(--accent-light);
+      font-size: 0.75rem;
+    }
+
     .image-card {
       background: var(--bg-card);
       border-radius: var(--radius-lg);
@@ -521,6 +533,25 @@
     }
 
     .upload-preview-wrap.visible { display: inline-block; }
+
+    .upload-preview-label {
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      z-index: 1;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.72);
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 600;
+      backdrop-filter: blur(8px);
+    }
+
+    .upload-preview-wrap.editing .upload-preview-img {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.18);
+    }
 
     .upload-preview-img {
       max-height: 120px;
@@ -781,6 +812,7 @@
             </div>
             <input type="file" id="imageUpload" accept="image/*" onchange="handleImageUpload(event)">
             <div class="upload-preview-wrap" id="uploadPreviewWrap">
+              <div class="upload-preview-label" id="uploadPreviewLabel">参考图片</div>
               <img id="uploadPreview" class="upload-preview-img" alt="">
               <button class="upload-remove" onclick="removeUpload(event)">✕</button>
             </div>
@@ -1020,7 +1052,10 @@
       reader.onload = async (e) => {
         const preview = document.getElementById('uploadPreview');
         preview.src = e.target.result;
-        document.getElementById('uploadPreviewWrap').classList.add('visible');
+        const previewWrap = document.getElementById('uploadPreviewWrap');
+        previewWrap.classList.add('visible');
+        previewWrap.classList.remove('editing');
+        document.getElementById('uploadPreviewLabel').textContent = '上传的参考图';
 
         // 直接用 base64 data URL，不需要上传到 Files API
         uploadedImageUrl = e.target.result;
@@ -1032,7 +1067,9 @@
     function removeUpload(e) {
       e.stopPropagation();
       uploadedImageUrl = null;
-      document.getElementById('uploadPreviewWrap').classList.remove('visible');
+      const previewWrap = document.getElementById('uploadPreviewWrap');
+      previewWrap.classList.remove('visible', 'editing');
+      document.getElementById('uploadPreviewLabel').textContent = '参考图片';
       document.getElementById('imageUpload').value = '';
     }
 
@@ -1060,7 +1097,9 @@
       // Clear uploaded reference image after submit
       if (currentMode === 'edit' && uploadedImageUrl) {
         uploadedImageUrl = null;
-        document.getElementById('uploadPreviewWrap').classList.remove('visible');
+        const previewWrap = document.getElementById('uploadPreviewWrap');
+        previewWrap.classList.remove('visible', 'editing');
+        document.getElementById('uploadPreviewLabel').textContent = '参考图片';
         document.getElementById('imageUpload').value = '';
       }
 
@@ -1113,9 +1152,9 @@
                 }
                 scrollBottom();
               } else if (data.type === 'completed') {
-                const finalHtml = renderAssistantImage(data.imageUrl, false, data.revisedPrompt);
+                const finalHtml = renderAssistantImage(data.imageUrl, false, data.revisedPrompt, data.durationMs);
                 loadingEl.innerHTML = finalHtml;
-                showToast('图片生成完成', 'success');
+                showToast(`图片生成完成，耗时 ${formatDuration(data.durationMs)}`, 'success');
               } else if (data.type === 'error') {
                 loadingEl.innerHTML = `
                   <div class="assistant-avatar">🎨</div>
@@ -1190,7 +1229,18 @@
       return div;
     }
 
-    function renderAssistantImage(imageUrl, isPartial = false, prompt = '') {
+    function formatDuration(ms) {
+      if (!Number.isFinite(ms)) return '';
+      if (ms < 1000) return `${ms}ms`;
+      return `${(ms / 1000).toFixed(1)}秒`;
+    }
+
+    function renderGenerationTime(durationMs) {
+      const text = formatDuration(durationMs);
+      return text ? `<div class="generation-time">耗时 ${text}</div>` : '';
+    }
+
+    function renderAssistantImage(imageUrl, isPartial = false, prompt = '', durationMs = null) {
       const imgSrc = isPartial
         ? ''
         : imageUrl;
@@ -1219,6 +1269,7 @@
         <div class="assistant-avatar">🎨</div>
         <div class="assistant-body">
           ${prompt ? `<div class="assistant-text">${escapeHtml(prompt)}</div>` : ''}
+          ${renderGenerationTime(durationMs)}
           <div class="image-card">
             ${isPartial ? '<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div></div>' : `<img src="${imgSrc}" class="${imgClass}" alt="Generated" onclick="openLightbox('${imageUrl}')">`}
             ${actionsHtml}
@@ -1235,11 +1286,38 @@
       a.click();
     }
 
-    function editImage(url) {
+    async function editImage(url) {
       switchMode('edit');
+      const preview = document.getElementById('uploadPreview');
+      const previewWrap = document.getElementById('uploadPreviewWrap');
+      preview.src = url;
+      previewWrap.classList.add('visible', 'editing');
+      document.getElementById('uploadPreviewLabel').textContent = '正在编辑这张图片';
       document.getElementById('promptInput').focus();
       document.getElementById('promptInput').placeholder = '描述你想对这张图片进行的修改...';
-      showToast('已切换到编辑模式，请描述修改需求', 'success');
+      document.querySelector('.input-area').scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+      try {
+        uploadedImageUrl = await imageUrlToDataUrl(url);
+        showToast('已选中要编辑的图片，请描述修改需求', 'success');
+      } catch (error) {
+        uploadedImageUrl = null;
+        previewWrap.classList.remove('visible', 'editing');
+        showToast('载入编辑图片失败，请重试', 'error');
+      }
+    }
+
+    async function imageUrlToDataUrl(url) {
+      if (url.startsWith('data:')) return url;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Image load failed');
+      const blob = await response.blob();
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
     }
 
     async function retryGenerate() {
@@ -1298,9 +1376,9 @@
                 }
                 scrollBottom();
               } else if (data.type === 'completed') {
-                const finalHtml = renderAssistantImage(data.imageUrl, false, data.revisedPrompt);
+                const finalHtml = renderAssistantImage(data.imageUrl, false, data.revisedPrompt, data.durationMs);
                 loadingEl.innerHTML = finalHtml;
-                showToast('图片生成完成', 'success');
+                showToast(`图片生成完成，耗时 ${formatDuration(data.durationMs)}`, 'success');
               } else if (data.type === 'error') {
                 loadingEl.innerHTML = `
                   <div class="assistant-avatar">🎨</div>

@@ -1,10 +1,5 @@
 .env
 node_modules
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.svg
-*.ico
-*.log
-dist
+public/images
+public/temp
+data/

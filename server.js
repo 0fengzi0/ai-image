@@ -1,7 +1,7 @@
 import express from 'express';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
@@ -22,7 +22,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(join(__dirname, 'public')));
 
 // 确保目录存在
-const dirs = ['public/images', 'logs'];
+const dirs = ['public/images', 'logs', 'data'];
 for (const dir of dirs) {
   const fullPath = join(__dirname, dir);
   if (!existsSync(fullPath)) {
@@ -30,8 +30,33 @@ for (const dir of dirs) {
   }
 }
 
+const CONVERSATIONS_FILE = join(__dirname, 'data', 'conversations.json');
+
+function loadConversations() {
+  if (!existsSync(CONVERSATIONS_FILE)) return new Map();
+
+  try {
+    const raw = readFileSync(CONVERSATIONS_FILE, 'utf-8');
+    if (!raw.trim()) return new Map();
+    const list = JSON.parse(raw);
+    return new Map(list.map(item => [item.id, item]));
+  } catch (error) {
+    console.error('[Conversations load failed]', error);
+    return new Map();
+  }
+}
+
+function saveConversations() {
+  try {
+    const list = Array.from(conversations.values());
+    writeFileSync(CONVERSATIONS_FILE, JSON.stringify(list, null, 2));
+  } catch (error) {
+    console.error('[Conversations save failed]', error);
+  }
+}
+
 // 存储对话历史
-const conversations = new Map();
+const conversations = loadConversations();
 
 // 生成唯一ID
 function generateId() {
@@ -84,6 +109,7 @@ app.post('/api/conversations', (req, res) => {
     title: '新对话',
     createdAt: new Date().toISOString()
   });
+  saveConversations();
   res.json({ id });
 });
 
@@ -99,11 +125,14 @@ app.get('/api/conversations/:id', (req, res) => {
 // 删除对话
 app.delete('/api/conversations/:id', (req, res) => {
   conversations.delete(req.params.id);
+  saveConversations();
   res.json({ success: true });
 });
 
 // 生成图片 - 流式响应 (支持生成和编辑)
 app.post('/api/generate', async (req, res) => {
+  const startedAt = Date.now();
+
   const {
     conversationId,
     prompt,
@@ -130,6 +159,7 @@ app.post('/api/generate', async (req, res) => {
       createdAt: new Date().toISOString()
     };
     conversations.set(id, conversation);
+    saveConversations();
     console.log(`[Auto-create conversation] id=${id}`);
   }
 
@@ -285,25 +315,28 @@ app.post('/api/generate', async (req, res) => {
         conversation.title = prompt.slice(0, 20) + (prompt.length > 20 ? '...' : '');
       }
 
+      saveConversations();
+
       // 发送完成事件
       res.write(`data: ${JSON.stringify({
         type: 'completed',
         revisedPrompt,
         imageUrl: savedImageUrl,
-        imageId: imageCallId
+        imageId: imageCallId,
+        durationMs: Date.now() - startedAt
       })}\n\n`);
     } else {
       const detail = lastResponseSummary
         ? `未能生成图片。API 返回状态: ${lastResponseSummary.status || 'unknown'}，输出类型: ${lastResponseSummary.outputTypes.join(', ') || 'none'}${lastResponseSummary.text ? `，文本响应: ${lastResponseSummary.text}` : ''}`
         : '未能生成图片：API 未返回 image_generation_call.result';
-      res.write(`data: ${JSON.stringify({ type: 'error', error: detail })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', error: detail, durationMs: Date.now() - startedAt })}\n\n`);
     }
 
     res.end();
   } catch (error) {
     console.error('Error generating image:', error);
     const errorMsg = error.error?.message || error.message || 'Unknown error';
-    res.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg, durationMs: Date.now() - startedAt })}\n\n`);
     res.end();
   }
 });
