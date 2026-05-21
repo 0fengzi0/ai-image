@@ -73,7 +73,21 @@ function saveImage(base64Data, filename) {
 
 function normalizeImageSize(size) {
   if (!size || size === 'auto') return 'auto';
-  if (/^\d+x\d+$/.test(size)) return size;
+  if (/^\d+x\d+$/.test(size)) {
+    const [w, h] = size.split('x').map(Number);
+    const violations = [];
+    if (w % 16 !== 0 || h % 16 !== 0) violations.push('边长必须是16的倍数');
+    if (w > 3840 || h > 3840) violations.push('最大边长不能超过3840px');
+    const maxSide = Math.max(w, h), minSide = Math.min(w, h);
+    if (minSide > 0 && maxSide / minSide > 3) violations.push('长短边比例不能超过3:1');
+    const totalPx = w * h;
+    if (totalPx < 655360 || totalPx > 8294400) violations.push('总像素须在655360~8294400之间');
+    if (violations.length > 0) {
+      console.warn(`[Image size invalid] ${size}: ${violations.join('; ')}, falling back to 1024x1024`);
+      return '1024x1024';
+    }
+    return size;
+  }
 
   const ratioMap = {
     '1:1': '1024x1024',
@@ -122,6 +136,8 @@ app.post('/api/conversations', (req, res) => {
     id,
     messages: [],
     lastImageBase64: null,
+    lastResponseId: null,
+    lastImageCallId: null,
     title: '新对话',
     createdAt: new Date().toISOString()
   });
@@ -157,6 +173,10 @@ app.post('/api/generate', async (req, res) => {
     size = '1024x1024',
     imageUrl,
     imageUrls = [],
+    outputFormat,
+    outputCompression,
+    moderation,
+    background,
   } = req.body;
 
   if (!prompt) {
@@ -172,6 +192,8 @@ app.post('/api/generate', async (req, res) => {
       id,
       messages: [],
       lastImageBase64: null,
+      lastResponseId: null,
+      lastImageCallId: null,
       title: '新对话',
       createdAt: new Date().toISOString()
     };
@@ -192,24 +214,10 @@ app.post('/api/generate', async (req, res) => {
       ? imageUrls
       : (imageUrl ? [imageUrl] : []);
 
-    // 构建 input：多轮对话时用 base64 传入上一轮图片
     let input;
-    if (conversation.lastImageBase64 && referenceImageUrls.length === 0) {
-      // 多轮编辑：带上之前生成的图片(base64 内联)
-      input = [
-        {
-          role: 'user',
-          content: [
-            { type: 'input_text', text: `请直接基于参考图生成一张新图片。最终输出必须是图片，不要返回文字说明、操作建议、代码块或提示词文本。生成要求：${prompt}` },
-            {
-              type: 'input_image',
-              image_url: `data:image/png;base64,${conversation.lastImageBase64}`
-            }
-          ]
-        }
-      ];
-    } else if (referenceImageUrls.length > 0) {
-      // 上传/选择参考图片编辑（base64 data URL 内联，可多图）
+    let previousResponseId = undefined;
+
+    if (referenceImageUrls.length > 0) {
       input = [
         {
           role: 'user',
@@ -219,22 +227,38 @@ app.post('/api/generate', async (req, res) => {
           ]
         }
       ];
+    } else if (conversation.lastResponseId) {
+      previousResponseId = conversation.lastResponseId;
+      input = prompt;
     } else {
-      // 首次生成
-      input = `请直接生成一张新图片。最终输出必须是图片，不要返回文字说明、操作建议、代码块或提示词文本。生成要求：${prompt}`;
+      input = prompt;
     }
+
+    const toolConfig = {
+      type: 'image_generation',
+      action,
+      quality,
+      size: normalizeImageSize(size),
+      partial_images: 2,
+    };
+    if (outputFormat && outputFormat !== 'png') {
+      toolConfig.output_format = outputFormat;
+    }
+    if (outputCompression != null && (outputFormat === 'jpeg' || outputFormat === 'webp')) {
+      toolConfig.output_compression = outputCompression;
+    }
+if (moderation && moderation !== 'auto') {
+    toolConfig.moderation = moderation;
+  }
+  if (background && background !== 'auto') {
+    toolConfig.background = background;
+  }
 
     const requestParams = {
       model: MODEL,
       input,
-      tools: [{
-        type: 'image_generation',
-        action,
-        quality,
-        size: normalizeImageSize(size),
-        partial_images: 2,
-      }],
-      tool_choice: 'required',
+      previous_response_id: previousResponseId,
+      tools: [toolConfig],
       stream: true
     };
 
@@ -314,10 +338,11 @@ app.post('/api/generate', async (req, res) => {
     // 保存最终图片
     if (imageBase64) {
       const timestamp = Date.now();
-      const filename = `public/images/${conversationId}_${timestamp}.png`;
+      const ext = outputFormat === 'jpeg' ? 'jpg' : (outputFormat || 'png');
+      const filename = `public/images/${conversationId}_${timestamp}.${ext}`;
       saveImage(imageBase64, filename);
 
-      const savedImageUrl = `/images/${conversationId}_${timestamp}.png`;
+      const savedImageUrl = `/images/${conversationId}_${timestamp}.${ext}`;
 
       // 更新对话历史
       const userMessage = {
@@ -335,9 +360,11 @@ app.post('/api/generate', async (req, res) => {
         durationMs
       };
 
-      conversation.messages.push(userMessage, assistantMessage);
+    conversation.messages.push(userMessage, assistantMessage);
 
-      conversation.lastImageBase64 = imageBase64;
+    conversation.lastImageBase64 = imageBase64;
+    conversation.lastResponseId = responseId;
+    conversation.lastImageCallId = imageCallId;
 
       // 更新对话标题（取用户第一条消息前20字）
       if (conversation.messages.length <= 2) {

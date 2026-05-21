@@ -1003,19 +1003,35 @@
               <option value="3:2">3:2</option>
             </select>
           </div>
-          <div class="toolbar-group">
-            <span class="toolbar-label">分辨率</span>
-            <select class="toolbar-select" id="resolutionSelect" title="图片分辨率" onchange="toggleCustomResolution()">
-              <option value="1k" selected>1K</option>
-              <option value="2k">2K</option>
-              <option value="4k">4K</option>
-              <option value="custom">自定义</option>
-            </select>
-            <input class="toolbar-input" id="customWidth" type="number" min="256" max="4096" step="64" placeholder="宽" title="自定义宽度">
-            <span class="toolbar-label custom-resolution-separator" id="customResolutionSeparator">×</span>
-            <input class="toolbar-input" id="customHeight" type="number" min="256" max="4096" step="64" placeholder="高" title="自定义高度">
-          </div>
-        </div>
+      <div class="toolbar-group">
+        <span class="toolbar-label">分辨率</span>
+        <select class="toolbar-select" id="resolutionSelect" title="图片分辨率" onchange="toggleCustomResolution()">
+          <option value="1k" selected>1K</option>
+          <option value="2k">2K</option>
+          <option value="4k">4K</option>
+          <option value="custom">自定义</option>
+        </select>
+        <input class="toolbar-input" id="customWidth" type="number" min="256" max="4096" step="64" placeholder="宽" title="自定义宽度">
+        <span class="toolbar-label custom-resolution-separator" id="customResolutionSeparator">×</span>
+        <input class="toolbar-input" id="customHeight" type="number" min="256" max="4096" step="64" placeholder="高" title="自定义高度">
+      </div>
+      <div class="toolbar-group">
+        <span class="toolbar-label">格式</span>
+        <select class="toolbar-select" id="formatSelect" title="输出格式" onchange="toggleCompression()">
+          <option value="png" selected>PNG</option>
+          <option value="jpeg">JPEG</option>
+          <option value="webp">WebP</option>
+        </select>
+<input class="toolbar-input" id="compressionInput" type="number" min="0" max="100" step="5" value="80" placeholder="压缩" title="压缩级别 0-100">
+</div>
+<div class="toolbar-group">
+  <span class="toolbar-label">背景</span>
+  <select class="toolbar-select" id="backgroundSelect" title="背景透明度">
+    <option value="auto" selected>自动</option>
+    <option value="opaque">不透明</option>
+  </select>
+</div>
+</div>
 
         <!-- Input Row -->
         <div class="input-row">
@@ -1356,10 +1372,14 @@
         await createNewChat();
       }
 
-      const quality = document.getElementById('qualitySelect').value;
-      const size = buildImageSize();
-      const action = currentMode === 'edit' ? 'edit' : 'generate';
-      const refImgs = currentMode === 'edit' ? referenceImages.map(img => img.dataUrl) : [];
+    const quality = document.getElementById('qualitySelect').value;
+    const size = buildImageSize();
+    const action = currentMode === 'edit' && refImgs.length > 0 ? 'edit' : 'auto';
+    const outputFormat = document.getElementById('formatSelect').value;
+const outputCompression = (outputFormat === 'jpeg' || outputFormat === 'webp')
+    ? Number(document.getElementById('compressionInput').value) : undefined;
+  const background = document.getElementById('backgroundSelect').value;
+  const refImgs = currentMode === 'edit' ? referenceImages.map(img => img.dataUrl) : [];
 
       appendUserMessage(prompt, refImgs);
       document.getElementById('promptInput').value = '';
@@ -1375,7 +1395,8 @@
       setSendBtnState(true);
 
       try {
-        const body = { conversationId: currentChatId, prompt, quality, size, action };
+        const body = { conversationId: currentChatId, prompt, quality, size, action, outputFormat };
+      if (outputCompression != null) body.outputCompression = outputCompression;
         if (currentMode === 'edit' && refImgs.length > 0) body.imageUrls = refImgs;
         lastGenerateParams = { ...body };
 
@@ -1553,33 +1574,58 @@
       a.click();
     }
 
-    function buildImageSize() {
+    function validateImageSize(w, h) {
+    if (!Number.isFinite(w) || !Number.isFinite(h)) {
+      showToast('请输入有效的数字分辨率', 'error'); return false;
+    }
+    if (w % 16 !== 0 || h % 16 !== 0) {
+      showToast('宽高必须是 16 的倍数', 'error'); return false;
+    }
+    if (w > 3840 || h > 3840) {
+      showToast('最大边长不能超过 3840px', 'error'); return false;
+    }
+    const maxSide = Math.max(w, h), minSide = Math.min(w, h);
+    if (maxSide / minSide > 3) {
+      showToast('长短边比例不能超过 3:1', 'error'); return false;
+    }
+    const totalPx = w * h;
+    if (totalPx < 655360 || totalPx > 8294400) {
+      showToast('总像素须在 655,360 ~ 8,294,400 之间', 'error'); return false;
+    }
+    return true;
+  }
+
+  function buildImageSize() {
       const ratio = document.getElementById('sizeSelect').value;
       const resolution = document.getElementById('resolutionSelect').value;
 
-      if (ratio === 'auto') return 'auto';
-      if (resolution === 'custom') {
-        const width = Number(document.getElementById('customWidth').value);
-        const height = Number(document.getElementById('customHeight').value);
-        if (width >= 256 && height >= 256) return `${Math.round(width)}x${Math.round(height)}`;
-        showToast('请输入有效的自定义分辨率', 'error');
-        return '1024x1024';
-      }
+  if (ratio === 'auto') return 'auto';
+  if (resolution === 'custom') {
+    const width = Number(document.getElementById('customWidth').value);
+    const height = Number(document.getElementById('customHeight').value);
+    if (!validateImageSize(width, height)) return '1024x1024';
+    return `${Math.round(width)}x${Math.round(height)}`;
+  }
 
-      const sizeMap = {
-        '1k': { '1:1': '1024x1024', '2:3': '1024x1536', '3:2': '1536x1024' },
-        '2k': { '1:1': '2048x2048', '2:3': '2048x3072', '3:2': '3072x2048' },
-        '4k': { '1:1': '4096x4096', '2:3': '2730x4096', '3:2': '4096x2730' }
-      };
-      return sizeMap[resolution]?.[ratio] || '1024x1024';
+  const sizeMap = {
+    '1k': { '1:1': '1024x1024', '2:3': '1024x1536', '3:2': '1536x1024' },
+    '2k': { '1:1': '2048x2048', '2:3': '1152x2048', '3:2': '2048x1152' },
+    '4k': { '1:1': '2048x2048', '2:3': '2160x3840', '3:2': '3840x2160' }
+  };
+  return sizeMap[resolution]?.[ratio] || '1024x1024';
     }
 
-    function toggleCustomResolution() {
-      const visible = document.getElementById('resolutionSelect').value === 'custom';
-      document.getElementById('customWidth').classList.toggle('visible', visible);
-      document.getElementById('customHeight').classList.toggle('visible', visible);
-      document.getElementById('customResolutionSeparator').classList.toggle('visible', visible);
-    }
+  function toggleCustomResolution() {
+    const visible = document.getElementById('resolutionSelect').value === 'custom';
+    document.getElementById('customWidth').classList.toggle('visible', visible);
+    document.getElementById('customHeight').classList.toggle('visible', visible);
+    document.getElementById('customResolutionSeparator').classList.toggle('visible', visible);
+  }
+
+  function toggleCompression() {
+    const fmt = document.getElementById('formatSelect').value;
+    document.getElementById('compressionInput').classList.toggle('visible', fmt === 'jpeg' || fmt === 'webp');
+  }
 
     async function editImage(url) {
       switchMode('edit');
