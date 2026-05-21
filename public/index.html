@@ -1363,8 +1363,6 @@
 
     // ===== Submit =====
     async function submitPrompt() {
-      if (isGenerating) return;
-
       const prompt = document.getElementById('promptInput').value.trim();
       if (!prompt) return;
 
@@ -1372,14 +1370,18 @@
         await createNewChat();
       }
 
-    const quality = document.getElementById('qualitySelect').value;
-    const size = buildImageSize();
-    const action = currentMode === 'edit' && refImgs.length > 0 ? 'edit' : 'auto';
-    const outputFormat = document.getElementById('formatSelect').value;
-const outputCompression = (outputFormat === 'jpeg' || outputFormat === 'webp')
-    ? Number(document.getElementById('compressionInput').value) : undefined;
-  const background = document.getElementById('backgroundSelect').value;
-  const refImgs = currentMode === 'edit' ? referenceImages.map(img => img.dataUrl) : [];
+      const refImgs = currentMode === 'edit' ? referenceImages.map(img => img.dataUrl) : [];
+      const quality = document.getElementById('qualitySelect').value;
+      const size = buildImageSize();
+      const action = currentMode === 'edit' && refImgs.length > 0 ? 'edit' : 'auto';
+      const outputFormat = document.getElementById('formatSelect').value;
+      const outputCompression = (outputFormat === 'jpeg' || outputFormat === 'webp')
+        ? Number(document.getElementById('compressionInput').value) : undefined;
+      const background = document.getElementById('backgroundSelect').value;
+      const body = { conversationId: currentChatId, prompt, quality, size, action, outputFormat, background };
+      if (outputCompression != null) body.outputCompression = outputCompression;
+      if (currentMode === 'edit' && refImgs.length > 0) body.imageUrls = refImgs;
+      lastGenerateParams = { ...body };
 
       appendUserMessage(prompt, refImgs);
       document.getElementById('promptInput').value = '';
@@ -1389,17 +1391,15 @@ const outputCompression = (outputFormat === 'jpeg' || outputFormat === 'webp')
         clearReferenceImages();
       }
 
-      // Show loading
       const loadingEl = appendLoadingMessage();
+      runGenerateRequest(body, loadingEl, '生成失败');
+    }
+
+    async function runGenerateRequest(body, loadingEl, failTitle = '请求失败') {
       isGenerating = true;
-      setSendBtnState(true);
+      setSendBtnState(false);
 
       try {
-        const body = { conversationId: currentChatId, prompt, quality, size, action, outputFormat };
-      if (outputCompression != null) body.outputCompression = outputCompression;
-        if (currentMode === 'edit' && refImgs.length > 0) body.imageUrls = refImgs;
-        lastGenerateParams = { ...body };
-
         const response = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1414,71 +1414,79 @@ const outputCompression = (outputFormat === 'jpeg' || outputFormat === 'webp')
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let imgContainer = null;
+        let buffer = '';
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const text = decoder.decode(value);
-          const lines = text.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() || '';
 
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            try {
-              const data = JSON.parse(line.slice(6));
+          for (const part of parts) {
+            const line = part.split('\n').find(item => item.startsWith('data: '));
+            if (!line) continue;
+            const data = JSON.parse(line.slice(6));
 
-              if (data.type === 'partial_image') {
-                if (!imgContainer) {
-                  loadingEl.innerHTML = renderAssistantImage(null, true);
-                  imgContainer = loadingEl.querySelector('.image-card');
-                }
-                if (imgContainer) {
-                  imgContainer.innerHTML = `
-                    <img src="data:image/png;base64,${data.data}" class="partial" alt="Rendering...">
-                  `;
-                }
-                scrollBottom();
-              } else if (data.type === 'completed') {
-                const finalHtml = renderAssistantImage(data.imageUrl, false, data.revisedPrompt, data.durationMs);
-                loadingEl.innerHTML = finalHtml;
-                showToast(`图片生成完成，耗时 ${formatDuration(data.durationMs)}`, 'success');
-              } else if (data.type === 'error') {
-                loadingEl.innerHTML = `
-                  <div class="assistant-avatar">🎨</div>
-                  <div class="assistant-body">
-                    <div style="color:var(--error);padding:12px;background:rgba(255,107,107,0.1);border-radius:var(--radius-md);border:1px solid rgba(255,107,107,0.2);">
-                      生成失败: ${escapeHtml(data.error)}
-                      <button class="image-action-btn" style="margin-top:8px;" onclick="retryGenerate()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
-                        重试
-                      </button>
-                    </div>
-                  </div>
-                `;
+            if (data.type === 'queued') {
+              updateLoadingText(loadingEl, data.queue > 0 ? `排队中：前方 ${data.queue} 个任务，并发 ${data.active}/${data.max}` : `已开始处理，并发 ${data.active}/${data.max}`);
+            } else if (data.type === 'attempt') {
+              updateLoadingText(loadingEl, `正在生成图片...第 ${data.attempt}/${data.maxRetries} 次尝试`);
+            } else if (data.type === 'retrying') {
+              updateLoadingText(loadingEl, `请求失败，${Math.ceil(data.delayMs / 1000)} 秒后自动重试 ${data.attempt}/${data.maxRetries}`);
+            } else if (data.type === 'partial_image') {
+              if (!imgContainer) {
+                loadingEl.innerHTML = renderAssistantImage(null, true);
+                imgContainer = loadingEl.querySelector('.image-card');
               }
-            } catch {}
+              if (imgContainer) {
+                imgContainer.innerHTML = `<img src="data:image/png;base64,${data.data}" class="partial" alt="Rendering...">`;
+              }
+              scrollBottom();
+            } else if (data.type === 'completed') {
+              loadingEl.innerHTML = renderAssistantImage(data.imageUrl, false, data.revisedPrompt, data.durationMs);
+              showToast(`图片生成完成，耗时 ${formatDuration(data.durationMs)}`, 'success');
+            } else if (data.type === 'error') {
+              renderRequestError(loadingEl, `${failTitle}: ${data.error}`);
+            }
           }
         }
 
         loadChatList();
       } catch (e) {
-        loadingEl.innerHTML = `
-          <div class="assistant-avatar">🎨</div>
-          <div class="assistant-body">
-            <div style="color:var(--error);padding:12px;background:rgba(255,107,107,0.1);border-radius:var(--radius-md);border:1px solid rgba(255,107,107,0.2);">
-              请求失败: ${escapeHtml(e.message)}
-              <button class="image-action-btn" style="margin-top:8px;" onclick="retryGenerate()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
-                重试
-              </button>
-            </div>
-          </div>
-        `;
+        renderRequestError(loadingEl, `${failTitle}: ${e.message}`);
       } finally {
         isGenerating = false;
         setSendBtnState(false);
         scrollBottom();
       }
+    }
+
+    function updateLoadingText(loadingEl, text) {
+      const body = loadingEl.querySelector('.assistant-body');
+      if (!body) return;
+      body.innerHTML = `
+        <div class="loading-indicator">
+          <div class="loading-dots"><span></span><span></span><span></span></div>
+          <span>${escapeHtml(text)}</span>
+        </div>
+      `;
+    }
+
+    function renderRequestError(loadingEl, message) {
+      loadingEl.innerHTML = `
+        <div class="assistant-avatar">🎨</div>
+        <div class="assistant-body">
+          <div style="color:var(--error);padding:12px;background:rgba(255,107,107,0.1);border-radius:var(--radius-md);border:1px solid rgba(255,107,107,0.2);">
+            ${escapeHtml(message)}
+            <button class="image-action-btn" style="margin-top:8px;" onclick="retryGenerate()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
+              手动重试
+            </button>
+          </div>
+        </div>
+      `;
     }
 
     // ===== Render Helpers =====
@@ -1661,96 +1669,12 @@ const outputCompression = (outputFormat === 'jpeg' || outputFormat === 'webp')
         return;
       }
 
-      // Remove the last assistant message from chat area
       const area = document.getElementById('chatArea');
       const msgs = area.querySelectorAll('.message.message-assistant');
       if (msgs.length > 0) msgs[msgs.length - 1].remove();
 
       const loadingEl = appendLoadingMessage();
-      isGenerating = true;
-      setSendBtnState(true);
-
-      try {
-        const body = { ...lastGenerateParams };
-        const response = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Request failed' }));
-          throw new Error(err.error || 'Request failed');
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let imgContainer = null;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const text = decoder.decode(value);
-          const lines = text.split('\n');
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (data.type === 'partial_image') {
-                if (!imgContainer) {
-                  loadingEl.innerHTML = renderAssistantImage(null, true);
-                  imgContainer = loadingEl.querySelector('.image-card');
-                }
-                if (imgContainer) {
-                  imgContainer.innerHTML = `
-                    <img src="data:image/png;base64,${data.data}" class="partial" alt="Rendering...">
-                  `;
-                }
-                scrollBottom();
-              } else if (data.type === 'completed') {
-                const finalHtml = renderAssistantImage(data.imageUrl, false, data.revisedPrompt, data.durationMs);
-                loadingEl.innerHTML = finalHtml;
-                showToast(`图片生成完成，耗时 ${formatDuration(data.durationMs)}`, 'success');
-              } else if (data.type === 'error') {
-                loadingEl.innerHTML = `
-                  <div class="assistant-avatar">🎨</div>
-                  <div class="assistant-body">
-                    <div style="color:var(--error);padding:12px;background:rgba(255,107,107,0.1);border-radius:var(--radius-md);border:1px solid rgba(255,107,107,0.2);">
-                      重试失败: ${escapeHtml(data.error)}
-                      <button class="image-action-btn" style="margin-top:8px;" onclick="retryGenerate()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
-                        重试
-                      </button>
-                    </div>
-                  </div>
-                `;
-              }
-            } catch {}
-          }
-        }
-
-        loadChatList();
-      } catch (e) {
-        loadingEl.innerHTML = `
-          <div class="assistant-avatar">🎨</div>
-          <div class="assistant-body">
-            <div style="color:var(--error);padding:12px;background:rgba(255,107,107,0.1);border-radius:var(--radius-md);border:1px solid rgba(255,107,107,0.2);">
-              重试失败: ${escapeHtml(e.message)}
-              <button class="image-action-btn" style="margin-top:8px;" onclick="retryGenerate()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
-                重试
-              </button>
-            </div>
-          </div>
-        `;
-      } finally {
-        isGenerating = false;
-        setSendBtnState(false);
-        scrollBottom();
-      }
+      runGenerateRequest({ ...lastGenerateParams }, loadingEl, '重试失败');
     }
 
     function openLightbox(url) {

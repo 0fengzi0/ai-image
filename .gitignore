@@ -3,3 +3,4 @@ node_modules
 public/images
 public/temp
 data/
+dist/
